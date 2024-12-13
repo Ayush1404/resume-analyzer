@@ -1,14 +1,11 @@
-import { OpenAI } from 'openai';
 import * as fs from 'node:fs/promises';
 import * as dotenv from 'dotenv'
 import { Workbook } from 'exceljs';
 import pdfParse from 'pdf-parse';
+import { Ollama } from 'ollama';
 
 dotenv.config();
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
 
 
 interface ResumeData {
@@ -48,32 +45,32 @@ const initialResumeData: ResumeData = {
 
 async function processResume(filePath: string, filename:string, extraFields?: string[] ) {
     try{
-         const fileData = await fs.readFile(filePath);
-         const pdfData = await pdfParse(fileData);
-          const fileContent = pdfData.text;
-           const allFields = extraFields ? [...defaultFields, ...extraFields]: defaultFields
+        const fileData = await fs.readFile(filePath);
+        const pdfData = await pdfParse(fileData);
+        const fileContent = pdfData.text;
+        const allFields = extraFields ? [...defaultFields, ...extraFields]: defaultFields
+        const ollama = new Ollama({ host: 'http://127.0.0.1:11434' })
 
-            const prompt = `Given the text from the resume, extract the following fields : ${allFields.join(',')} .If any data is not found add "No relevant data present" and respond in json format`
+        const prompt = `Given the text from the resume, extract the following fields : ${allFields.join(',')} .If any data is not found add "No relevant data present" and respond in a string in json format , don't add anything else to response`
 
-            console.log(prompt + fileContent)
-            const chatCompletion = await openai.chat.completions.create({
-                messages: [{ role: "user", content: prompt + fileContent }],
-                model: "gpt-4o-mini",
-            });
+        const res = await ollama.chat({
+            model: 'llama3.2',
+            messages: [{ role: "user", content: prompt + fileContent }]
+        });
 
-            let extractedData: ResumeData= {};
-        
-            try {
-                console.log(chatCompletion.choices[0].message.content)
-                extractedData = JSON.parse(chatCompletion.choices[0].message.content || "{}");
-            } catch (err) {
-                console.log(err);
-                extractedData = {};
-            }
-        
-            const response =  { ...initialResumeData , ...extractedData}
-        
-            return response;
+        let extractedData: ResumeData= {};
+    
+        try {
+            console.log(res.message.content)
+            extractedData = JSON.parse(res.message.content || "{}");
+        } catch (err) {
+            console.log(err);
+            extractedData = {};
+        }
+    
+        const response =  { ...initialResumeData , ...extractedData} 
+    
+        return response;
 
     } catch (err){
         console.error(`Error parsing PDF: ${err}`)
